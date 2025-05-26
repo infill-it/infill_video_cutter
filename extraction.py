@@ -21,6 +21,7 @@ def extract_frames_with_changes(
     """
     Extrahiert alle Frames, in denen sich die ROI (region of interest) 
     mit mindestens `threshold` Score ändert.
+    Dateinamen: {seconds:06d}s_frame{frame_idx:05d}.png
     Gibt Liste der gespeicherten Dateipfade zurück.
     """
     cap = cv2.VideoCapture(video_path)
@@ -32,7 +33,7 @@ def extract_frames_with_changes(
     last_ts = -1
     frame_idx = 0
 
-    # Stelle sicher, dass ein Temp-Output-Ordner existiert
+    # Temp-Output-Ordner
     out_dir = os.path.join(os.path.dirname(video_path), "screenshots")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -41,31 +42,32 @@ def extract_frames_with_changes(
         if not ret:
             break
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray      = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         roi_frame = gray[roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3]]
 
         ts_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
-        ts_s  = ts_ms // 1000
+        ts_s  = int(ts_ms // 1000)
 
         if prev_roi is None:
             prev_roi = roi_frame
-            last_ts = ts_s
+            last_ts  = ts_s
             frame_idx += 1
             continue
 
         # nur in Intervallen prüfen
         if ts_s - last_ts >= check_interval_s:
-            ssim = compare_ssim(roi_frame, prev_roi)
+            ssim       = compare_ssim(roi_frame, prev_roi)
             diff_score = 1 - ssim
+
             if diff_score >= threshold:
-                # Save full frame
-                fname = f"frame_{frame_idx:04d}_{int(ts_s)}s.png"
+                # Neuer Datei-Name: 000123s_frame00042.png
+                fname = f"{ts_s:06d}s_frame{frame_idx:05d}.png"
                 fpath = os.path.join(out_dir, fname)
                 cv2.imwrite(fpath, frame)
                 output_files.append(fpath)
 
-            prev_roi = roi_frame
-            last_ts = ts_s
+            prev_roi  = roi_frame
+            last_ts   = ts_s
 
         frame_idx += 1
 

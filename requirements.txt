@@ -2,3 +2,6 @@ streamlit
 opencv-python-headless
 scikit-image
 numpy
+pytesseract 
+pillow
+pandas
