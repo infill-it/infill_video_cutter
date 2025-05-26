@@ -6,3 +6,4 @@ screenshots/
 *.lock
 test_OCR.ipynb
 .gitignore
+pyproject.toml

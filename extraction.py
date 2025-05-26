@@ -19,7 +19,7 @@ def extract_frames_with_changes(
     check_interval_s: float = 5.0
 ) -> list[str]:
     """
-    Extrahiert alle Frames, in denen sich die ROI (region of interest) 
+    Extrahiert alle ROI-Crops, in denen sich die ROI (region of interest)
     mit mindestens `threshold` Score ändert.
     Dateinamen: {seconds:06d}s_frame{frame_idx:05d}.png
     Gibt Liste der gespeicherten Dateipfade zurück.
@@ -29,7 +29,7 @@ def extract_frames_with_changes(
         raise IOError(f"Cannot open video: {video_path}")
 
     output_files = []
-    prev_roi = None
+    prev_roi_gray = None
     last_ts = -1
     frame_idx = 0
 
@@ -42,32 +42,36 @@ def extract_frames_with_changes(
         if not ret:
             break
 
-        gray      = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        roi_frame = gray[roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3]]
+        # Graues ROI für Change-Detection
+        gray         = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        roi_gray     = gray[roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3]]
+        # Farb-ROI zum Speichern
+        roi_color    = frame[roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3]]
 
         ts_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         ts_s  = int(ts_ms // 1000)
 
-        if prev_roi is None:
-            prev_roi = roi_frame
-            last_ts  = ts_s
-            frame_idx += 1
+        if prev_roi_gray is None:
+            prev_roi_gray = roi_gray
+            last_ts       = ts_s
+            frame_idx    += 1
             continue
 
         # nur in Intervallen prüfen
         if ts_s - last_ts >= check_interval_s:
-            ssim       = compare_ssim(roi_frame, prev_roi)
+            ssim       = compare_ssim(roi_gray, prev_roi_gray)
             diff_score = 1 - ssim
 
             if diff_score >= threshold:
-                # Neuer Datei-Name: 000123s_frame00042.png
+                # Datei-Name: 000123s_frame00042.png
                 fname = f"{ts_s:06d}s_frame{frame_idx:05d}.png"
                 fpath = os.path.join(out_dir, fname)
-                cv2.imwrite(fpath, frame)
+                # Speichere nur das Farb-ROI
+                cv2.imwrite(fpath, roi_color)
                 output_files.append(fpath)
 
-            prev_roi  = roi_frame
-            last_ts   = ts_s
+            prev_roi_gray = roi_gray
+            last_ts        = ts_s
 
         frame_idx += 1
 
