@@ -3,6 +3,10 @@ import cv2
 import pandas as pd
 import pytesseract
 from pytesseract import Output
+from PIL import Image, ImageDraw
+import shutil
+from pptx import Presentation
+from pptx.util import Emu
 
 def ocr_image_to_dataframe(image_path: str) -> pd.DataFrame:
     """
@@ -44,3 +48,46 @@ def ocr_image_to_dataframe(image_path: str) -> pd.DataFrame:
             })
 
     return pd.DataFrame(rows)
+
+def add_image_and_text_slides(prs: Presentation, image_path: str):
+    """
+    Fügt dem Presentation-Objekt zwei Folien hinzu:
+      1) Vollbild mit dem Screenshot
+      2) Bearbeitbare Textfolie basierend auf OCR-Ergebnissen
+    """
+    # Bild-Folie
+    slide_img = prs.slides.add_slide(prs.slide_layouts[6])
+    slide_img.shapes.add_picture(
+        image_path,
+        left=0, top=0,
+        width=prs.slide_width,
+        height=prs.slide_height
+    )
+
+    # EMU-Skala bestimmen
+    img = cv2.imread(image_path)
+    h, w = img.shape[:2]
+    emu_x = prs.slide_width  / w
+    emu_y = prs.slide_height / h
+
+    # OCR-Text-Folie
+    df = ocr_image_to_dataframe(image_path)
+    slide_txt = prs.slides.add_slide(prs.slide_layouts[6])
+    for _, grp in df.groupby("block_num"):
+        g = grp.sort_values(["line_num", "word_num"])
+        text = " ".join(g["text"].tolist())
+        left   = int(g["left"].min())
+        top    = int(g["top"].min())
+        right  = int((g["left"] + g["width"]).max())
+        bottom = int((g["top"]  + g["height"]).max())
+
+        tb = slide_txt.shapes.add_textbox(
+            Emu(left * emu_x),
+            Emu(top  * emu_y),
+            Emu((right-left) * emu_x),
+            Emu((bottom-top) * emu_y),
+        )
+        tf = tb.text_frame
+        tf.text = text
+        for p in tf.paragraphs:
+            p.font.size = Emu(12 * 9144)

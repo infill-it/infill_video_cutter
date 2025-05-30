@@ -2,7 +2,6 @@ import streamlit as st
 import tempfile, zipfile, os
 import cv2
 from PIL import Image, ImageDraw
-from extraction import get_video_dimensions, extract_frames_with_changes
 from extraction import (
     get_video_dimensions,
     extract_frames_with_changes,
@@ -11,7 +10,9 @@ from extraction import (
 import shutil
 from pptx import Presentation
 from pptx.util import Emu
-from ocr import ocr_image_to_dataframe
+from ocr import (ocr_image_to_dataframe,
+    add_image_and_text_slides
+)
 
 st.set_page_config(page_title="Video → PPT-Screenshots", layout="centered")
 # Bild ohne abgerundete Ecken:
@@ -117,8 +118,8 @@ if "outs" not in st.session_state:
 if "ocr_ready" not in st.session_state:
     st.session_state["ocr_ready"] = False
 
-# … Dein Upload-, ROI- und Extraktions-Block oben …
-# 1) Extraktion-Button
+
+# Extraktion-Button
 if st.button("Screenshots extrahieren"):
     with st.spinner("Extrahiere…"):
         roi = (y, x, h, w)
@@ -130,21 +131,24 @@ if st.button("Screenshots extrahieren"):
         st.warning("Keine signifikanten Änderungen gefunden.")
     else:
         st.success(f"{len(outs)} Screenshots erstellt.")
-        # Zustand speichern
         st.session_state["outs"] = outs
         st.session_state["ocr_ready"] = True
 
-        # ZIP mit Screenshots anbieten
-        zip_path = os.path.join(os.path.dirname(tfile.name), "screenshots.zip")
-        with zipfile.ZipFile(zip_path, "w") as zf:
-            for fp in outs:
-                zf.write(fp, arcname=os.path.basename(fp))
-        with open(zip_path, "rb") as f:
-            st.download_button(
-                "📥 Screenshots (ZIP) herunterladen",
-                f,
-                file_name="screenshots.zip"
-            )
+# 2) Permanenter Download-Button für die Screenshots
+if st.session_state.get("outs"):
+    outs = st.session_state["outs"]
+    zip_path = os.path.join(os.path.dirname(tfile.name), "screenshots.zip")
+    # (erneut schreiben / updaten, falls nötig)
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for fp in outs:
+            zf.write(fp, arcname=os.path.basename(fp))
+    # immer sichtbar, solange outs gesetzt ist
+    with open(zip_path, "rb") as f:
+        st.download_button(
+            "📥 Screenshots-ZIP herunterladen",
+            f,
+            file_name="screenshots.zip"
+        )
 
 if st.session_state["ocr_ready"]:
     if st.button("📝 OCR ausführen & PPTX generieren"):
@@ -154,65 +158,18 @@ if st.session_state["ocr_ready"]:
             ocr_dir  = os.path.join(base_dir, "ocr_output")
             os.makedirs(ocr_dir, exist_ok=True)
 
-            # 1) Neue Präsentation anlegen
+            # Neue Präsentation anlegen
             prs = Presentation()
-            emu_x = emu_y = None
 
+            # Für jede extrahierte Slide Bild- und Text-Folien hinzufügen
             for fp in outs:
-                # --- a) Bild-Folie ---
-                slide_img = prs.slides.add_slide(prs.slide_layouts[6])
-                # Vollbild einfügen
-                slide_img.shapes.add_picture(
-                    fp,
-                    left=0, top=0,
-                    width=prs.slide_width,
-                    height=prs.slide_height
-                )
+                add_image_and_text_slides(prs, fp)
 
-                # EMU-Faktor fürs spätere Text-Layout nur einmal bestimmen
-                if emu_x is None:
-                    img = cv2.imread(fp)
-                    h, w = img.shape[:2]
-                    emu_x = prs.slide_width  / w
-                    emu_y = prs.slide_height / h
-
-                # --- b) OCR-Text-Folie ---
-                df_ocr = ocr_image_to_dataframe(fp)
-                # Textblöcke extrahieren
-                blocks = []
-                for _, grp in df_ocr.groupby("block_num"):
-                    g = grp.sort_values(["line_num", "word_num"])
-                    text = " ".join(g["text"].tolist())
-                    left   = int(g["left"].min())
-                    top    = int(g["top"].min())
-                    right  = int((g["left"] + g["width"]).max())
-                    bottom = int((g["top"]  + g["height"]).max())
-                    blocks.append({
-                        "text":   text,
-                        "left":   left,
-                        "top":    top,
-                        "width":  right - left,
-                        "height": bottom - top
-                    })
-
-                slide_txt = prs.slides.add_slide(prs.slide_layouts[6])
-                for b in blocks:
-                    tb = slide_txt.shapes.add_textbox(
-                        Emu(b["left"]  * emu_x),
-                        Emu(b["top"]   * emu_y),
-                        Emu(b["width"] * emu_x),
-                        Emu(b["height"]* emu_y),
-                    )
-                    tf = tb.text_frame
-                    tf.text = b["text"]
-                    for p in tf.paragraphs:
-                        p.font.size = Emu(12 * 9144)
-
-            # 2) PPTX speichern
+            # PPTX speichern
             pptx_path = os.path.join(ocr_dir, "recreated_presentation.pptx")
             prs.save(pptx_path)
 
-            # 3) ZIP mit allen PNGs + PPTX
+            # ZIP mit allen PNGs + PPTX
             zip2 = os.path.join(base_dir, "ocr_slides.zip")
             with zipfile.ZipFile(zip2, "w") as zf2:
                 # alle Screenshots
@@ -221,7 +178,7 @@ if st.session_state["ocr_ready"]:
                 # und die Präsentation
                 zf2.write(pptx_path, arcname=os.path.basename(pptx_path))
 
-        # 4) Download-Button
+        # Download-Button
         with open(zip2, "rb") as f2:
             st.download_button(
                 "📥 Screenshots + OCR-PPTX herunterladen",
