@@ -1,7 +1,8 @@
-streamlit
-opencv-python-headless
-scikit-image
 numpy
-pytesseract 
-pillow
+opencv-python-headless
 pandas
+pillow
+pytesseract
+python-pptx
+scikit-image
+streamlit
