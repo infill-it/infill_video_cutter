@@ -6,3 +6,4 @@ pytesseract
 python-pptx
 scikit-image
 streamlit
+pytesseract
